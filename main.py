@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 
 # Import from the original maptoposter
+import create_map_poster
 from create_map_poster import (
     get_coordinates,
     load_theme,
@@ -70,10 +71,13 @@ def generate_poster(
     Returns the poster as a PNG image
     """
     try:
-        # Load theme
+        # Load theme and SET GLOBAL THEME variable
         theme_data = load_theme(theme)
         if not theme_data:
             raise HTTPException(status_code=400, detail=f"Theme '{theme}' not found")
+
+        # Critical: Set the global THEME variable in create_map_poster module
+        create_map_poster.THEME = theme_data
 
         # Get coordinates
         print(f"Looking up coordinates for {city}, {country}...")
