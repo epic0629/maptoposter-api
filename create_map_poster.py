@@ -348,14 +348,46 @@ def _resolve_geocode(geolocator, query):
     return location
 
 
+def _resolve_geocode_with_params(geolocator, query, params=None):
+    """
+    Run a single geocode query with extra parameters and handle async edge cases.
+
+    Args:
+        geolocator: Nominatim geolocator instance
+        query: Search query string
+        params: Additional keyword arguments for geocode (e.g. featuretype)
+
+    Returns:
+        Location object or None
+    """
+    try:
+        kwargs = params or {}
+        location = geolocator.geocode(query, **kwargs)
+    except Exception:
+        return None
+
+    if asyncio.iscoroutine(location):
+        try:
+            location = asyncio.run(location)
+        except RuntimeError as exc:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                raise RuntimeError(
+                    "Geocoder returned a coroutine while an event loop is already running."
+                ) from exc
+            location = loop.run_until_complete(location)
+
+    return location
+
+
 def get_coordinates(city, country):
     """
     Fetches coordinates for a given city and country using geopy.
-    Tries 'city centre' query first for better downtown positioning,
-    then falls back to plain city query.
+    Uses featuretype='city' for accurate city-level positioning,
+    then falls back to plain query.
     Includes rate limiting to be respectful to the geocoding service.
     """
-    coords = f"coords_v2_{city.lower()}_{country.lower()}"
+    coords = f"coords_v3_{city.lower()}_{country.lower()}"
     cached = cache_get(coords)
     if cached:
         print(f"[OK] Using cached coordinates for {city}, {country}")
@@ -367,19 +399,27 @@ def get_coordinates(city, country):
     # Add a small delay to respect Nominatim's usage policy
     time.sleep(1)
 
-    # Strategy: try city centre first for better downtown positioning
-    queries = [
-        f"{city} city centre, {country}",
-        f"{city}, {country}",
-    ]
-
+    # Strategy 1: Use featuretype='city' for accurate administrative center
+    # This avoids matching POIs like "city centre" which can be wrong
+    # (e.g. Kyoto "city centre" → garbage facility at 34.918N)
     location = None
-    for query in queries:
-        print(f"  Trying: {query}")
-        location = _resolve_geocode(geolocator, query)
+    for query in [f"{city}, {country}", f"{city} City, {country}"]:
+        print(f"  Trying: {query} (featuretype=city)")
+        try:
+            location = _resolve_geocode_with_params(
+                geolocator, query, {"featuretype": "city"}
+            )
+        except Exception:
+            pass
         if location:
             break
         time.sleep(1)
+
+    # Strategy 2: Fallback to plain query without featuretype
+    if not location:
+        query = f"{city}, {country}"
+        print(f"  Trying: {query} (no featuretype)")
+        location = _resolve_geocode(geolocator, query)
 
     if location:
         # Use getattr to safely access address (helps static analyzers)
