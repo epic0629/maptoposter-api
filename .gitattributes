@@ -1,0 +1,4 @@
+# Treat font files as binary to prevent CRLF corruption
+*.ttf binary
+*.woff2 binary
+*.otf binary
