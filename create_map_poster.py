@@ -791,12 +791,15 @@ def create_poster(
     )
 
     # DPI matters mainly for raster formats
+    # Lower DPI for large distances to reduce memory usage on constrained servers
     if fmt == "png":
-        save_kwargs["dpi"] = 300
+        save_kwargs["dpi"] = 200 if dist > 10000 else 300
 
     plt.savefig(output_file, format=fmt, **save_kwargs)
 
     plt.close()
+    import gc
+    gc.collect()
     print(f"[OK] Done! Poster saved as {output_file}")
 
 
