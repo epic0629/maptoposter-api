@@ -316,12 +316,46 @@ def get_edge_widths_by_type(g):
     return edge_widths
 
 
+def _resolve_geocode(geolocator, query):
+    """
+    Run a single geocode query and handle async edge cases.
+
+    Args:
+        geolocator: Nominatim geolocator instance
+        query: Search query string
+
+    Returns:
+        Location object or None
+    """
+    try:
+        location = geolocator.geocode(query)
+    except Exception:
+        return None
+
+    # If geocode returned a coroutine in some environments, run it to get the result.
+    if asyncio.iscoroutine(location):
+        try:
+            location = asyncio.run(location)
+        except RuntimeError as exc:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                raise RuntimeError(
+                    "Geocoder returned a coroutine while an event loop is already running. "
+                    "Run this script in a synchronous environment."
+                ) from exc
+            location = loop.run_until_complete(location)
+
+    return location
+
+
 def get_coordinates(city, country):
     """
     Fetches coordinates for a given city and country using geopy.
+    Tries 'city centre' query first for better downtown positioning,
+    then falls back to plain city query.
     Includes rate limiting to be respectful to the geocoding service.
     """
-    coords = f"coords_{city.lower()}_{country.lower()}"
+    coords = f"coords_v2_{city.lower()}_{country.lower()}"
     cached = cache_get(coords)
     if cached:
         print(f"[OK] Using cached coordinates for {city}, {country}")
@@ -333,25 +367,19 @@ def get_coordinates(city, country):
     # Add a small delay to respect Nominatim's usage policy
     time.sleep(1)
 
-    try:
-        location = geolocator.geocode(f"{city}, {country}")
-    except Exception as e:
-        raise ValueError(f"Geocoding failed for {city}, {country}: {e}") from e
+    # Strategy: try city centre first for better downtown positioning
+    queries = [
+        f"{city} city centre, {country}",
+        f"{city}, {country}",
+    ]
 
-    # If geocode returned a coroutine in some environments, run it to get the result.
-    if asyncio.iscoroutine(location):
-        try:
-            location = asyncio.run(location)
-        except RuntimeError as exc:
-            # If an event loop is already running, try using it to complete the coroutine.
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # Running event loop in the same thread; raise a clear error.
-                raise RuntimeError(
-                    "Geocoder returned a coroutine while an event loop is already running. "
-                    "Run this script in a synchronous environment."
-                ) from exc
-            location = loop.run_until_complete(location)
+    location = None
+    for query in queries:
+        print(f"  Trying: {query}")
+        location = _resolve_geocode(geolocator, query)
+        if location:
+            break
+        time.sleep(1)
 
     if location:
         # Use getattr to safely access address (helps static analyzers)
