@@ -660,6 +660,29 @@ def create_poster(
                 parks_polys = parks_polys.to_crs(g_proj.graph['crs'])
             parks_polys.plot(ax=ax, facecolor=THEME['parks'], edgecolor='none', zorder=0.8)
     # Layer 2: Roads with hierarchy coloring
+    # For 20km radius, filter out minor roads to reduce memory and rendering time
+    if dist >= 20000:
+        print("Filtering minor roads for 20km range...")
+        major_road_types = {
+            "motorway", "motorway_link",
+            "trunk", "trunk_link",
+            "primary", "primary_link",
+            "secondary", "secondary_link",
+            "tertiary", "tertiary_link",
+        }
+        edges_to_remove = []
+        for u, v, key, data in g_proj.edges(keys=True, data=True):
+            highway = data.get('highway', 'unclassified')
+            if isinstance(highway, list):
+                highway = highway[0] if highway else 'unclassified'
+            if highway not in major_road_types:
+                edges_to_remove.append((u, v, key))
+        g_proj.remove_edges_from(edges_to_remove)
+        # Remove isolated nodes after edge removal
+        isolated = [n for n in g_proj.nodes() if g_proj.degree(n) == 0]
+        g_proj.remove_nodes_from(isolated)
+        print(f"  Removed {len(edges_to_remove)} minor edges, {len(isolated)} isolated nodes")
+
     print("Applying road hierarchy colors...")
     edge_colors = get_edge_colors_by_type(g_proj)
     edge_widths = get_edge_widths_by_type(g_proj)
@@ -831,9 +854,12 @@ def create_poster(
     )
 
     # DPI matters mainly for raster formats
-    # Lower DPI for large distances to reduce memory usage on constrained servers
+    # Lower DPI only for 20km to reduce memory usage on constrained servers
     if fmt == "png":
-        save_kwargs["dpi"] = 200 if dist > 10000 else 300
+        if dist >= 20000:
+            save_kwargs["dpi"] = 150
+        else:
+            save_kwargs["dpi"] = 300
 
     plt.savefig(output_file, format=fmt, **save_kwargs)
 
