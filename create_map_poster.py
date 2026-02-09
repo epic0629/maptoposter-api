@@ -855,12 +855,9 @@ def create_poster(
     )
 
     # DPI matters mainly for raster formats
-    # Lower DPI only for 20km to reduce memory usage on constrained servers
+    # 200 DPI balances quality and server memory/cost
     if fmt == "png":
-        if dist >= 20000:
-            save_kwargs["dpi"] = 150
-        else:
-            save_kwargs["dpi"] = 300
+        save_kwargs["dpi"] = 200
 
     plt.savefig(output_file, format=fmt, **save_kwargs)
 
