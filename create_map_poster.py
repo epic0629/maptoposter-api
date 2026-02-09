@@ -474,29 +474,30 @@ def get_crop_limits(g_proj, center_lat_lon, fig, dist):
     )
 
 
-def fetch_graph(point, dist) -> MultiDiGraph | None:
+def fetch_graph(point, dist, network_type='all') -> MultiDiGraph | None:
     """
     Fetch street network graph from OpenStreetMap.
 
-    Uses caching to avoid redundant downloads. Fetches all network types
+    Uses caching to avoid redundant downloads. Fetches network types
     within the specified distance from the center point.
 
     Args:
         point: (latitude, longitude) tuple for center point
         dist: Distance in meters from center point
+        network_type: OSMnx network type ('all' or 'drive')
 
     Returns:
         MultiDiGraph of street network, or None if fetch fails
     """
     lat, lon = point
-    graph = f"graph_{lat}_{lon}_{dist}"
+    graph = f"graph_{lat}_{lon}_{dist}_{network_type}"
     cached = cache_get(graph)
     if cached is not None:
         print("[OK] Using cached street network")
         return cast(MultiDiGraph, cached)
 
     try:
-        g = ox.graph_from_point(point, dist=dist, dist_type='bbox', network_type='all', truncate_by_edge=True)
+        g = ox.graph_from_point(point, dist=dist, dist_type='bbox', network_type=network_type, truncate_by_edge=True)
         # Rate limit between requests
         time.sleep(0.5)
         try:
@@ -600,7 +601,9 @@ def create_poster(
         # 1. Fetch Street Network
         pbar.set_description("Downloading street network")
         compensated_dist = dist * (max(height, width) / min(height, width)) / 4  # To compensate for viewport crop
-        g = fetch_graph(point, compensated_dist)
+        # Use 'drive' for large distances to avoid OOM on dense cities (Tokyo, etc.)
+        net_type = 'drive' if dist >= 10000 else 'all'
+        g = fetch_graph(point, compensated_dist, network_type=net_type)
         if g is None:
             raise RuntimeError("Failed to retrieve street network data.")
         pbar.update(1)
