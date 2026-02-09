@@ -669,6 +669,7 @@ def create_poster(
             "primary", "primary_link",
             "secondary", "secondary_link",
             "tertiary", "tertiary_link",
+            "residential", "living_street", "unclassified",
         }
         edges_to_remove = []
         for u, v, key, data in g_proj.edges(keys=True, data=True):
